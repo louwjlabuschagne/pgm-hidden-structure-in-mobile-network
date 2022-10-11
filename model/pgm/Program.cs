@@ -35,8 +35,6 @@ namespace TestInfer
 
 
             int numberOfIterations = 30;
-            // int numDays = 242; // set by user (121, 242)
-            // int numUniqueSites = 1724; // set by user (1583, 1724)
             int NULL_KPI_VALUE = 100000;//default value in KPI data when no data is available
 
             int numDays = -1;
@@ -369,6 +367,7 @@ namespace TestInfer
             Console.WriteLine("Weights: {0}", weightsPosteriors);
 
             /*********** outputs ***********/
+
             var storeWeights = new StringBuilder();
             var line = string.Format("{0}", weightsPosteriors.GetMean());
             storeWeights.AppendLine(line);

@@ -51,6 +51,35 @@ namespace TestInfer
             string kpisFilename  = "";
             string labelsFilename = "";
 
+            int NR_DIMS = 2;
+            int NR_CLASSES = 2;//Promoter or Detractor
+
+            float mu_0_dim_0 = 0.0f; //mean prior for the site performance for the promoter cluster dimension 0
+            float mu_0_dim_1 = 0.0f; //mean prior for the site performance for the promoter cluster dimension 1
+            float prec_0 = 0.1f; //precision prior for the site performance for the promoter cluster dimension 1
+
+
+            // for detractors
+            float mu_1_dim_0 = 0.0f; //mean prior for the site performance for the detractor cluster dimension 0
+            float mu_1_dim_1 = 0.0f; //mean prior for the site performance for the detractor cluster dimension 1
+            float prec_1 = 0.1f; //precision prior for the site performance for the detractor cluster dimension 1
+
+            float wishart_shape = 0.1f; //wishart shape
+            float wishart_scale = 1.0f; //wishart scale
+
+            float DEFAULT_SITE_LABEL_PRIOR = 0.5f;//the default p value for the bernouli if there is no label for a site
+            float SITE_PEFORMANCE_PRIOR = 0.5f;//
+
+            float TRUE_COUNT_PRIOR = 5; //count of promoters that are really promoters, and count of true detractors that are really detractors
+            float FALSE_COUNT_PRIOR = 2; //count of promoters that are not really promoters, and count of detractors that are not really detractors
+
+            // here we set both TRUE and FALSE to 1 as we are unsure at the start
+            float TRUE_IS_BAD_SITE_PRIOR = 1; //count of sites that are really bad sites
+            float FALSE_IS_BAD_SITE_PRIOR = 1; //count of sites that are really good sites
+
+            
+
+
             if (args.Length == 0) {
                 // Display message to user to provide parameters.
                 System.Console.WriteLine ("Please enter parameter values.");
@@ -222,30 +251,31 @@ namespace TestInfer
             VariableArray<bool> site = Variable.Array<bool>(rangeSites).Named("sites");
 
             VariableArray<bool> siteLabel = Variable.Array<bool>(rangeSites).Named("sitesLabel");
-            siteLabel[rangeSites] = Variable.Bernoulli(0.5).ForEach(rangeSites);
+            siteLabel[rangeSites] = Variable.Bernoulli(DEFAULT_SITE_LABEL_PRIOR).ForEach(rangeSites);
 
             VariableArray<bool> isDetractor = Variable.Array<bool>(rangeCustomers).Named("isDetractor");
 
             VariableArray<bool> hadBadSiteInt = Variable.Array<bool>(rangeCustomers).Named("hadBadSiteInt");
 
-            Variable<double> trueDetractor = Variable.Beta(5, 2).Named("trueDetractor");
-            Variable<double> falseDetractor = Variable.Beta(2, 5).Named("falseDetractor");
+            Variable<double> trueDetractor = Variable.Beta(TRUE_COUNT_PRIOR, FALSE_COUNT_PRIOR).Named("trueDetractor");
+            Variable<double> falseDetractor = Variable.Beta(FALSE_COUNT_PRIOR, TRUE_COUNT_PRIOR).Named("falseDetractor");
 
             //// the Gaussian mixture part of the model
-            Range k = new Range(2);
+            Range k = new Range(NR_CLASSES);
             VariableArray<Vector> means = Variable.Array<Vector>(k).Named("means");
 
-            means[0] = Variable.VectorGaussianFromMeanAndPrecision(Vector.FromArray(0.0, 0.0), PositiveDefiniteMatrix.IdentityScaledBy(2, 0.1));
-            means[1] = Variable.VectorGaussianFromMeanAndPrecision(Vector.FromArray(0.0, 0.0), PositiveDefiniteMatrix.IdentityScaledBy(2, 0.1));
+            means[0] = Variable.VectorGaussianFromMeanAndPrecision(Vector.FromArray(mu_0_dim_0, mu_0_dim_1), PositiveDefiniteMatrix.IdentityScaledBy(NR_DIMS, prec_0));
+            means[1] = Variable.VectorGaussianFromMeanAndPrecision(Vector.FromArray(mu_1_dim_0, mu_1_dim_1), PositiveDefiniteMatrix.IdentityScaledBy(NR_DIMS, prec_1));
             VariableArray<PositiveDefiniteMatrix> precisions = Variable.Array<PositiveDefiniteMatrix>(k).Named("precisions");
-            precisions[k] = Variable.WishartFromShapeAndScale(0.1, PositiveDefiniteMatrix.IdentityScaledBy(2, 1)).ForEach(k);
+            precisions[k] = Variable.WishartFromShapeAndScale(wishart_shape, PositiveDefiniteMatrix.IdentityScaledBy(NR_DIMS, wishart_scale)).ForEach(k);
 
             VariableArray<Vector> kpis = Variable.Array<Vector>(rangeSites).Named("kpis").Attrib(new DoNotInfer());
 
             VariableArray<bool> isMissingVar = Variable.Observed(isMissing, rangeSites);
             VariableArray<bool> hasLabelVar = Variable.Observed(hasLabel, rangeSites);
-            Variable<double> weights = Variable.Beta(1, 1).Named("weights");
+            Variable<double> weights = Variable.Beta(TRUE_IS_BAD_SITE_PRIOR, FALSE_IS_BAD_SITE_PRIOR).Named("weights");
 
+            // enforces that the mean of the one cluster is greater than the other
             Variable.ConstrainTrue(Variable.GetItem(means[1], 0) < Variable.GetItem(means[0], 0));
             Variable.ConstrainTrue(Variable.GetItem(means[1], 1) < Variable.GetItem(means[0], 1));
 
@@ -259,7 +289,7 @@ namespace TestInfer
 
                 using (Variable.If(isMissingVar[t]))
                 {
-                    site[t] = Variable.Bernoulli(0.5);
+                    site[t] = Variable.Bernoulli(SITE_PEFORMANCE_PRIOR);
                 }
 
                 using (Variable.If(hasLabelVar[rangeSites]))
@@ -328,7 +358,7 @@ namespace TestInfer
             Wishart[] precisionsPosteriors = InferenceEngine.Infer<Wishart[]>(precisions);
             ///*******************************/
 
-            for (int i = 0; i < 2; i++)
+            for (int i = 0; i < NR_CLASSES; i++)
             {
                 Console.WriteLine("Posterior Gaussian: {0}", meansPosteriors[i]);
                 Console.WriteLine("Posterior Gamma: {0}", precisionsPosteriors[i].GetMean().Inverse());
@@ -361,7 +391,7 @@ namespace TestInfer
 
             var storeGMM = new StringBuilder();
 
-            for (int i = 0; i < 2; i++)
+            for (int i = 0; i < NR_CLASSES; i++)
             {
                 var meanVec = meansPosteriors[i].GetMean();
                 var varMat = precisionsPosteriors[i].GetMean().Inverse();
@@ -369,7 +399,6 @@ namespace TestInfer
                 storeGMM.AppendLine(newLine);
             }
 
-            
 
             File.WriteAllText(dataDir+"/output/sites-results.csv", storeSites.ToString());
             File.WriteAllText(dataDir+"/output/customer-results.csv", storeCustomer.ToString());
